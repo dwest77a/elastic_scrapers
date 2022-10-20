@@ -9,14 +9,15 @@
 ## 1.1 check/count identical pcodes in arsf data
 from datetime import datetime
 import numpy as np
-import matplotlib.pyplot as plt
-import xarray as xarr
+#import matplotlib.pyplot as plt
+plt = ''
+#import xarray as xarr
 
 from elasticsearch import Elasticsearch
 from pytostr import writeArrToString, writeDictToString # local
 
 IS_PLOT  = False
-IS_WRITE = False
+IS_WRITE = True
 
 def timeToDayFraction(time):
     init_day = datetime(1,1,1,0,0,0) # 1st Jan 1 AD
@@ -66,7 +67,74 @@ def findMatchingPcodes(response):
 def getArchiveMetadata(path):
     # try to access a l1b file via jasmin connection
     # read parameters and return as metadata dict
-    return None
+
+    # l1b files - contain no useful metadata
+    # 00readme - contains no useful metadata
+    # catalogue_and_license - ATM/CASI search? (one method of instrument search)
+
+    # flight plane - scrape from catalogue_and_license (check Piper)
+    # variables    - l1b hdf files
+    # geoinfo      - scrape from readme (vague info)
+    # platform     - None
+    # instrument   - scrape from catalogue_and_license (check Photographic Camera=Camera
+    #                                                         ATM, CASI)
+
+    cat_log_file = "00README_catalogue_and_licence.txt"
+    readme = "00README"
+
+    def getContents(file):
+        try:
+            f=open(file,'r')
+            contents = f.readlines()
+            f.close()
+        except:
+            contents = ''
+            print(file,'not found')
+        return contents
+
+    metadata = {
+        'plane':'',
+        'variables':'',
+        'location':'',
+        'platform':'',
+        'instruments':[]
+    }
+
+    ## -------------- Catalogue and License Search --------------
+    catalogue = getContents(path + '/' + cat_log_file)
+    if type(catalogue) == list:
+        catalogue = catalogue[1]
+
+    if 'Photographic Camera' in catalogue:
+        metadata['instruments'].append('Camera')
+    is_recording = False
+    buffer = ''
+    for x in range(len(catalogue)):
+
+        ## ----------- Instrument -------------
+        if catalogue[x:x+3] == 'ATM':
+            metadata['instruments'].append('ATM')
+        elif catalogue[x:x+4] == 'CASI':
+            metadata['instruments'].append('CASI')
+
+        ## ----------- Flight Plane -----------
+        elif catalogue[x:x+5] == 'Piper':
+            is_recording = True
+
+        elif catalogue[x+1:x+7] == 'during':
+            is_recording = False
+            metadata['plane'] = buffer
+            buffer = ''
+        else:
+            pass
+
+        if is_recording:
+            buffer += catalogue[x]
+
+    ## -------------- README Search --------------
+    metadata['location'] = getContents(path + '/' + readme)[0].replace('\n','').replace(',',' -')
+    
+    return metadata
 
 #f = open('response.txt','r')
 #content = f.readlines()
@@ -167,7 +235,7 @@ if __name__ == '__main__':
                     }
                 }
             ,
-            "size":10000
+            "size":1
         }
     )
 
@@ -221,7 +289,6 @@ if __name__ == '__main__':
     spatial_arr = np.array(spatial_arr, dtype=object)
     print('Removed {} ({}%) coordinate entries outside stdev bounds'.format(removed, (removed*100)/(removed+remaining)))
     print('Remaining coords: {} '.format(remaining))
-    x=input()
 
     ## --------------------------- Step 2 ------------------------------
     """
@@ -317,7 +384,7 @@ if __name__ == '__main__':
 
         metadata = ptcodes_metadata[ptcode]
 
-        archive_meta = getArchiveMetadata(metadata['path'])
+        archive_metadata = getArchiveMetadata(metadata['path'])
         
         template = response['hits']['hits'][metadata['index']]
         
@@ -327,16 +394,16 @@ if __name__ == '__main__':
         template["_source"]["temporal"]["start_time"] = metadata['start']
         template["_source"]["temporal"]["end_time"] = metadata['end']
 
-        template["_source"]["misc"]["flight_info"] = {
+        template["_source"]["misc"] = {
             "flight_num":"",
             "pcode":metadata['ptcode'].split('*')
         }
-        
+
         del template["_source"]["file"]["filename"]
 
-        if archive_meta != None:
+        if archive_metadata != None:
             # Add archive metadata
-            pass
+            template["_source"]["misc"] = dict(template["_source"]["misc"],**archive_metadata)
 
         ## ----------- 4.5: Plot sum_arr X,Y values to visualise data -----------
         if IS_PLOT:
