@@ -10,9 +10,13 @@
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+import xarray as xarr
 
 from elasticsearch import Elasticsearch
 from pytostr import writeArrToString, writeDictToString # local
+
+IS_PLOT  = False
+IS_WRITE = False
 
 def timeToDayFraction(time):
     init_day = datetime(1,1,1,0,0,0) # 1st Jan 1 AD
@@ -58,6 +62,12 @@ def findMatchingPcodes(response):
         print(pcode, pdict[pcode])
     return None
 
+
+def getArchiveMetadata(path):
+    # try to access a l1b file via jasmin connection
+    # read parameters and return as metadata dict
+    return None
+
 #f = open('response.txt','r')
 #content = f.readlines()
 #f.close()
@@ -75,7 +85,7 @@ if __name__ == '__main__':
         index="arsf",
         body={
             "_source":{
-                "include":[
+                "includes":[
                     "data_format.format",
                     "file.filename",
                     "file.path",
@@ -92,14 +102,15 @@ if __name__ == '__main__':
                             {
                                 "exists":{
                                     "field":"spatial.geometries.display.type"}
-                                }
-                            ,
+                            },
                             {
                                 "range":{
-                                    "temporal.start_time":{
-                                    }
-                                    }
-                                }
+                                    "temporal.start_time":{}}}
+#                                        "from": "1992-01-01",
+ #                                       "to": "1998-12-12"
+#                                    }
+#                                }
+#                            }
                             ]
                         ,
                         "must_not":[
@@ -156,7 +167,7 @@ if __name__ == '__main__':
                     }
                 }
             ,
-            "size":400
+            "size":10000
         }
     )
 
@@ -172,6 +183,10 @@ if __name__ == '__main__':
     spatial_arr = []
     # Define array for storing hit response info (basic)
     hit_response_arr = []
+    removed = 0
+    remaining = 0
+
+    print('ES responded with {} hits'.format(len(response['hits']['hits'])))
 
     for index, hit in enumerate(response['hits']['hits']):
 
@@ -187,10 +202,26 @@ if __name__ == '__main__':
         hit_response_arr.append([pcode, start_time, index, short_path, end_time])
 
         # Extract spatial coords for each hit
-        spatial_arr.append(hit['_source']['spatial']['geometries']['display']['coordinates'])
+        arr = np.array(hit['_source']['spatial']['geometries']['display']['coordinates'], dtype=float)
+        X = np.transpose(arr)[0]
+        Y = np.transpose(arr)[1]
+
+        xconditions = np.logical_and( X < np.mean(X) + np.std(X)*3, X > np.mean(X) - np.std(X)*3)
+        yconditions = np.logical_and( Y < np.mean(Y) + np.std(Y)*3, Y > np.mean(Y) - np.std(Y)*3)
+
+        Xc = X[np.logical_and(xconditions, yconditions)]
+        Yc = Y[np.logical_and(xconditions, yconditions)]
+
+        removed += len(X) - len(Xc)
+        remaining += len(Xc)
+
+        spatial_arr.append(np.transpose(np.vstack((Xc,Yc))))
 
     # Map array to np.array
-    spatial_arr = np.array(spatial_arr)
+    spatial_arr = np.array(spatial_arr, dtype=object)
+    print('Removed {} ({}%) coordinate entries outside stdev bounds'.format(removed, (removed*100)/(removed+remaining)))
+    print('Remaining coords: {} '.format(remaining))
+    x=input()
 
     ## --------------------------- Step 2 ------------------------------
     """
@@ -221,6 +252,7 @@ if __name__ == '__main__':
 
     ptcodes_metadata = {}
     ptcodes_sorted = {}
+    ptcodes_written = ''
     for ptcode in ptcodes.keys():
         # Define internal array as ptcode_hits - the 'hits' for each ptcode
         ptcode_hits = ptcodes[ptcode]
@@ -236,6 +268,8 @@ if __name__ == '__main__':
                 'start' : primary[0], # Primary ptcode start time
                 'end'   : final[3]    # Final ptcode end time
             }
+        
+        ptcodes_written += ptcode + '\n'
 
     print('Compiled a list of {} PCodes'.format(len(ptcodes_metadata)))
 
@@ -253,7 +287,7 @@ if __name__ == '__main__':
 
         ## ----------- 4.1: Add time entries to dict to detect duplicates -----------
         do_not_concat = []
-        print('ptcode: ',ptcode)
+        #print('ptcode: ',ptcode)
         times_dict = {}
         for entry in ptcodes_arr:
             try:
@@ -282,6 +316,8 @@ if __name__ == '__main__':
         ## ----------- 4.4: Assemble json query from template (primary index) -----------
 
         metadata = ptcodes_metadata[ptcode]
+
+        archive_meta = getArchiveMetadata(metadata['path'])
         
         template = response['hits']['hits'][metadata['index']]
         
@@ -298,22 +334,31 @@ if __name__ == '__main__':
         
         del template["_source"]["file"]["filename"]
 
-        ## ----------- 4.5: Plot sum_arr X,Y values to visualise data -----------
+        if archive_meta != None:
+            # Add archive metadata
+            pass
 
-        X = np.transpose(sum_arr)[0]
-        Y = np.transpose(sum_arr)[1]
-        plt.plot(X,Y)
-        plt.show()
+        ## ----------- 4.5: Plot sum_arr X,Y values to visualise data -----------
+        if IS_PLOT:
+            X = np.transpose(sum_arr)[0]
+            Y = np.transpose(sum_arr)[1]
+            plt.plot(X,Y)
+            plt.show()
 
         ## ----------- 4.6: Write json style dict to a string -----------
 
-        is_write = False
-        if is_write:
+        if IS_WRITE:
             g = open('jsons/{}'.format(ptcode),'w')
             g.write(writeDictToString(template))
             g.close()
-        else:
-            pass
-    print('Written all Jsons')
+
+    if IS_WRITE:
+        print('Written all Jsons')
+    else:
+        print('Program exited - no jsons were saved')
+
+    h = open('ptcodes.txt','w')
+    h.write(ptcodes_written)
+    h.close()
 
        
