@@ -1,2 +1,4 @@
 example.json
 jsons/*
+__pycache__/
+ptcodes.txt
