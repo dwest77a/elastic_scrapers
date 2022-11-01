@@ -70,10 +70,10 @@ for line in neodc:
         neodict[date]['count'] += 1
     except:
         neodict[date] = {
-            'count':0,
-            'site_no':ln[0],
-            'loc':ln[1],
-            'alt':ln[3]
+            'Count':0,
+            'Site_no':ln[0],
+            'Location':ln[1],
+            'Altitude':ln[3]
         }
 
 
@@ -95,12 +95,12 @@ for i in range(1,len(arsf)):
     date = en[2]
 
     try:
-        arsf_hist[date]['count'] += 1
+        arsf_hist[date]['Count'] += 1
     except:
         arsf_hist[date] = {
             # Metadata available
-            'Loc': en[0],
-            'ptcode': ptcode,
+            'Location': en[0],
+            'Pcode': ptcode,
             'Count': 1,
 
             'FMatch': False, # Full Match
@@ -108,9 +108,9 @@ for i in range(1,len(arsf)):
             'PMatch': False, # Matching pcodes
             'Adate': '',
 
-            'site':'',
-            'nloc':'',
-            'alt':''
+            'Site':'',
+            'NLocation':'',
+            'Altitude':''
         }
 
         arsf_dict[ptcode] = date
@@ -132,13 +132,13 @@ for line in ptlist:
 
     try:
         arsf_hist[date]['DMatch'] = True
-        if match_codes(ptcode,arsf_hist[date]['ptcode']):
+        if match_codes(ptcode,arsf_hist[date]['Pcode']) or match_codes(ptcode, arsf_hist[date]['Site']):
             arsf_hist[date]['PMatch'] = True
             arsf_hist[date]['FMatch'] = True
             fmatches += 1
         else:
             dmatches += 1
-            pcross += '{} => {} for {}\n'.format(ptcode, arsf_hist[date]['ptcode'], date)
+            pcross += '{} => {} for {}\n'.format(ptcode, arsf_hist[date]['Pcode'], date)
         unmatches -= 1
     except KeyError:
         # Dates do not match, try ptcodes?
@@ -155,10 +155,10 @@ for line in ptlist:
 
     try:
         # Match neodc dates as well - dmatch or fmatch
-        arsf_hist[date]['site'] = neodict[date]['site_no']
-        arsf_hist[date]['nloc'] = neodict[date]['loc']
-        arsf_hist[date]['alt'] = neodict[date]['alt']
-        if arsf_hist[date]['Loc'] == arsf_hist[date]['nloc']:
+        arsf_hist[date]['Site'] = neodict[date]['Site_no']
+        arsf_hist[date]['NLocation'] = neodict[date]['Location']
+        arsf_hist[date]['Altitude'] = neodict[date]['Altitude']
+        if arsf_hist[date]['Location'] == arsf_hist[date]['NLocation']:
             lmatches += 1
         nmatches += 1
     except KeyError:
@@ -188,6 +188,6 @@ a = open('dates_cross.txt','w')
 a.write(dcross)
 a.close()
 
-b = open('arsf_complete.json','w')
+b = open('arsf.json','w')
 b.write(json.dumps(arsf_matches))
 b.close()
