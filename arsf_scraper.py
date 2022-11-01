@@ -9,6 +9,7 @@
 ## 1.1 check/count identical pcodes in arsf data
 from datetime import datetime
 import numpy as np
+import json
 #import matplotlib.pyplot as plt
 plt = ''
 #import xarray as xarr
@@ -63,6 +64,11 @@ def findMatchingPcodes(response):
         print(pcode, pdict[pcode])
     return None
 
+def getARSFMetadata():
+    f = open('arsf.json')
+    content = json.load(f)
+    f.close()
+    return content
 
 def getArchiveMetadata(path):
     # try to access a l1b file via jasmin connection
@@ -142,6 +148,7 @@ def getArchiveMetadata(path):
 #findMatchingPcodes(content[0])
 
 if __name__ == '__main__':
+    arsf_meta = getARSFMetadata()
     session_kwargs = {
         'hosts': ['https://elasticsearch.ceda.ac.uk'],
         'use_ssl': False,
@@ -235,7 +242,7 @@ if __name__ == '__main__':
                     }
                 }
             ,
-            "size":1
+            "size":5400
         }
     )
 
@@ -380,7 +387,7 @@ if __name__ == '__main__':
             if entry[1] not in do_not_concat: # and idx not in [16, 17, 18]:
                 sum_arr = np.vstack((sum_arr, spatial_arr[entry[1]]))
 
-        ## ----------- 4.4: Assemble json query from template (primary index) -----------
+        ## ----------- 4.4: Assemble json data from template (primary index) -----------
 
         metadata = ptcodes_metadata[ptcode]
 
@@ -404,6 +411,45 @@ if __name__ == '__main__':
         if archive_metadata != None:
             # Add archive metadata
             template["_source"]["misc"] = dict(template["_source"]["misc"],**archive_metadata)
+
+        ## ----------- 4.5: Add NEODC/ARSF Metadata retrieved from xls documents -----------
+
+        date_old = metadata['ptcode'].split('*')[1]
+        dt = date.split('-')
+        date = '{}/{}/{}'.format(dt[2],dt[1],dt[0])
+
+        try:
+            arsf_metadata = arsf_meta[date]
+            l1 = arsf_metadata['Location']
+            l2 = arsf_metadata['NLocation']
+            if (l1 == l2) or (l1 in l2) or (l2 in l1):
+                # take longest
+                if len(l1) > len(l2):
+                    locations = [l1]
+                else:
+                    locations = [l2]
+            else:
+                locations = [l1,l2]
+
+            alt = arsf_metadata['Altitude']
+            # Add additional metadata in correct places
+            # full match only for now
+            # add locations (arr) if not equal or in one another
+            # add site code - difference?
+            # add altitude
+            try:
+                template["_source"]["misc"]["flight_info"]["altitude"] = alt
+                template["_source"]["misc"]["flight_info"]["locations"] = locations
+            except KeyError:
+                pass
+                # No pcode - shouldnt happen really
+
+
+        except:
+            # No arsf metadata for this record
+            pass
+
+
 
         ## ----------- 4.5: Plot sum_arr X,Y values to visualise data -----------
         if IS_PLOT:
