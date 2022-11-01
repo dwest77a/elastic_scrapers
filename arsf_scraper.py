@@ -21,6 +21,8 @@ from pytostr import writeArrToString, writeDictToString # local
 IS_PLOT  = False
 IS_WRITE = True
 
+VERBOSE = False
+
 def rmWhiteSpace(word):
     isword = False
     new_word = ''
@@ -41,7 +43,8 @@ def getContents(file):
         f.close()
     except:
         contents = False
-        print(file,'not found')
+        if VERBOSE:
+            print(file,'not found')
     return contents
 
 def timeToDayFraction(time):
@@ -95,25 +98,54 @@ def getARSFMetadata():
     return content
 
 def getReadmeData(path):
+    import re
+    
     files = os.listdir(path)
-    readmes = ['readme','README','ReadMe','read_me']
-    extract_from = False
+    
+    pattern = '.*[Rr][Ee][Aa][Dd].*[Mm][Ee].*'
+
+    extract_from = []
     principle = False
     for f in files:
-        for g in readmes:
-            if g in f:
-                extract_from = path + '/' + f
+        if re.search(pattern, f):
+            extract_from.append(path + '/' + f)
 
-    if extract_from:
-        content = getContents(extract_from)
-        if content:
-            PI = content[3]
-            if 'Principle' in PI:
-                principle = rmWhiteSpace(PI.split('-')[1])
-                print(path)
-                x=input()
+    if len(extract_from) > 0:
+        counter = 0
+        while not principle and counter < len(extract_from):
+            content = getContents(extract_from[counter])
+            if content:
+                try:
+                    PI = content[3]
+                    if 'Principle' in PI:
+                        principle = rmWhiteSpace(PI.split('-')[1])
+                except:
+                    pass
+            counter += 1
     return principle
 
+def getVars(path):
+    from pyhdf.SD import SD, SDC
+
+    files = os.listdir(path)
+    rfiles = []
+    for f in files:
+        if f.endswith('.hdf'):
+            rfiles.append(path + '/' + f)
+
+    variables = []
+    for f in rfiles:
+        try:
+            f1 = SD(f,SDC.READ)
+            for value in f1.datasets().keys():
+                if value == 'ATdata':
+                    if 'ATM 0.42-13.5mm' not in variables:
+                        variables.append('ATM 0.42-13.5mm')
+                elif value not in variables:
+                    variables.append(value)
+        except:
+            pass
+    return variables
 
 def getArchiveMetadata(path):
     # try to access a l1b file via jasmin connection
@@ -130,81 +162,102 @@ def getArchiveMetadata(path):
     # instrument   - scrape from catalogue_and_license (check Photographic Camera=Camera
     #                                                         ATM, CASI)
 
-    cat_log_file = "00README_catalogue_and_licence.txt"
-    readme = "00README"
+    if os.path.exists(path):
+        cat_log_file = "00README_catalogue_and_licence.txt"
+        readme = "00README"
 
-    metadata = {
-        'plane':'',
-        'variables':'',
-        'location':'',
-        'platform':'',
-        'instruments':[],
-        'pi':''
-    }
+        metadata = {
+            'plane':'',
+            'variables':'',
+            'location':'',
+            'platform':'',
+            'instruments':[],
+            'pi':''
+        }
 
-    ## -------------- Catalogue and License Search --------------
-    catalogue = getContents(path + '/' + cat_log_file)
-    if catalogue:
-        if type(catalogue) == list:
-            catalogue = catalogue[1]
+        ## -------------- Catalogue and License Search --------------
+        catalogue = getContents(path + '/' + cat_log_file)
+        if catalogue:
+            if type(catalogue) == list:
+                catalogue = catalogue[1]
 
-        if 'Photographic Camera' in catalogue:
-            metadata['instruments'].append('Camera')
-        is_recording = False
-        buffer = ''
-        for x in range(len(catalogue)):
+            if 'Photographic Camera' in catalogue:
+                metadata['instruments'].append('Camera')
+            is_recording = False
+            buffer = ''
+            for x in range(len(catalogue)):
 
-            ## ----------- Instrument -------------
-            if catalogue[x:x+3] == 'ATM':
-                metadata['instruments'].append('ATM')
-            elif catalogue[x:x+4] == 'CASI':
-                metadata['instruments'].append('CASI')
+                ## ----------- Instrument -------------
+                if catalogue[x:x+3] == 'ATM':
+                    metadata['instruments'].append('ATM')
+                elif catalogue[x:x+4] == 'CASI':
+                    metadata['instruments'].append('CASI')
 
-            ## ----------- Flight Plane -----------
-            elif catalogue[x:x+5] == 'Piper':
-                is_recording = True
+                ## ----------- Flight Plane -----------
+                elif catalogue[x:x+5] == 'Piper':
+                    is_recording = True
 
-            elif catalogue[x+1:x+7] == 'during':
-                is_recording = False
-                metadata['plane'] = buffer
-                buffer = ''
-            else:
-                pass
+                elif catalogue[x+1:x+7] == 'during':
+                    is_recording = False
+                    metadata['plane'] = buffer
+                    buffer = ''
+                else:
+                    pass
 
-            if is_recording:
-                buffer += catalogue[x]
+                if is_recording:
+                    buffer += catalogue[x]
 
-    ## -------------- 00README Search --------------
-    readme_outer = getContents(path + '/' + readme)
-    if readme_outer:
-        try:
-            metadata['location'] = readme_outer[0].replace('\n','').replace(',',' -')
-        except:
-            metadata['location'] = ''
+        ## -------------- 00README Search --------------
+        readme_outer = getContents(path + '/' + readme)
+        if readme_outer:
+            try:
+                metadata['location'] = readme_outer[0].replace('\n','').replace(',',' -')
+            except:
+                metadata['location'] = ''
 
-    ## -------------- README Extra Search --------------
-    # Try in order: path + docs, path + * + docs
-    data = False
-    dirpath1 = path + '/Docs/'
-    if os.path.isdir(dirpath1):
-        data = getReadmeData(dirpath1)
+        ## -------------- README Extra Search --------------
+        # Try in order: path + docs, path + * + docs
+        data = False
+        dirpath1 = path + '/Docs/'
+        if os.path.isdir(dirpath1):
+            data = getReadmeData(dirpath1)
+        else:
+            dirpath2 = ''
+            for xf in os.listdir(path):
+                xfile = path + '/' + xf
+                if os.path.isdir(xfile):
+                    for yf in os.listdir(xfile):
+                        yfile = xfile + '/' + yf
+                        if 'Docs' in yfile:
+                            # Location of docs folder identified
+                            dirpath2 = yfile
+            if dirpath2 != '':
+                data = getReadmeData(dirpath2)
+
+        if data:
+            metadata['pi'] = data
+
+        ## -------------- L1B Variable Search -------------- 
+        vars = False
+        if os.path.exists(path + '/L1b'):
+            vars = getVars(path + '/L1b')
+        elif os.path.exists(path + '/ATM'):
+            vars = ['Old']
+        else:
+            pass
+
+        if vars:
+            metadata['variables'] = vars
+
+        # retrieve l1b variable names
+
+        
+        return metadata
+
     else:
-        dirpath2 = ''
-        for xf in os.listdir(path):
-            xfile = path + '/' + xf
-            if os.path.isdir(xfile):
-                for yf in os.listdir(xfile):
-                    yfile = xfile + '/' + yf
-                    if 'Docs' in yfile:
-                        # Location of docs folder identified
-                        dirpath2 = yfile
-        if dirpath2 != '':
-            data = getReadmeData(dirpath2)
+        return None
 
-    if data:
-        metadata['pi'] = data
     
-    return metadata
 
 #f = open('response.txt','r')
 #content = f.readlines()
@@ -212,6 +265,8 @@ def getArchiveMetadata(path):
 #findMatchingPcodes(content[0])
 
 if __name__ == '__main__':
+    principles = 0
+
     arsf_meta = getARSFMetadata()
     session_kwargs = {
         'hosts': ['https://elasticsearch.ceda.ac.uk'],
@@ -421,6 +476,7 @@ if __name__ == '__main__':
     """
 
     for ptcode in ptcodes_sorted.keys():
+        print(ptcode)
         ptcodes_arr = ptcodes_sorted[ptcode]
 
         ## ----------- 4.1: Add time entries to dict to detect duplicates -----------
@@ -472,8 +528,11 @@ if __name__ == '__main__':
 
         del template["_source"]["file"]["filename"]
 
-        if archive_metadata != None:
+        if archive_metadata:
             # Add archive metadata
+            if archive_metadata['pi'] != '':
+                principles += 1
+
             template["_source"]["misc"] = dict(template["_source"]["misc"],**archive_metadata)
 
         ## ----------- 4.5: Add NEODC/ARSF Metadata retrieved from xls documents -----------
@@ -534,6 +593,8 @@ if __name__ == '__main__':
             g = open('jsons/{}.json'.format(ptcode),'w')
             g.write(json.dumps(template))
             g.close()
+
+    print('PIs located:',principles)
 
     if IS_WRITE:
         print('Written all Jsons')
