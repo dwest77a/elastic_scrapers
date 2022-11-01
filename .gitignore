@@ -2,3 +2,8 @@ example.json
 jsons/*
 __pycache__/
 ptcodes.txt
+dates_cross.txt
+ptcodes_cross.txt
+arsf_complete.json
+arsf_meta.csv
+neodc_meta.txt

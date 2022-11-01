@@ -54,4 +54,4 @@ def formatJsonString(string):
     return word
 
 if __name__ == '__main__':
-    formatJsonFile('jsons/97_19*1998-05-19','example.json')
+    formatJsonFile('arsf_complete.json','arsf.json')
