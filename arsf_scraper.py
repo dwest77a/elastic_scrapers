@@ -10,6 +10,7 @@
 from datetime import datetime
 import numpy as np
 import json
+import os
 #import matplotlib.pyplot as plt
 plt = ''
 #import xarray as xarr
@@ -19,6 +20,29 @@ from pytostr import writeArrToString, writeDictToString # local
 
 IS_PLOT  = False
 IS_WRITE = True
+
+def rmWhiteSpace(word):
+    isword = False
+    new_word = ''
+    for char in word:
+        if isword and char != '\n':
+            new_word += char
+        elif char != ' ' and char != '\t':
+            isword = True
+            new_word += char
+        else:
+            pass
+    return new_word
+
+def getContents(file):
+    try:
+        f=open(file,'r')
+        contents = f.readlines()
+        f.close()
+    except:
+        contents = False
+        print(file,'not found')
+    return contents
 
 def timeToDayFraction(time):
     init_day = datetime(1,1,1,0,0,0) # 1st Jan 1 AD
@@ -70,6 +94,27 @@ def getARSFMetadata():
     f.close()
     return content
 
+def getReadmeData(path):
+    files = os.listdir(path)
+    readmes = ['readme','README','ReadMe','read_me']
+    extract_from = False
+    principle = False
+    for f in files:
+        for g in readmes:
+            if g in f:
+                extract_from = path + '/' + f
+
+    if extract_from:
+        content = getContents(extract_from)
+        if content:
+            PI = content[3]
+            if 'Principle' in PI:
+                principle = rmWhiteSpace(PI.split('-')[1])
+                print(path)
+                x=input()
+    return principle
+
+
 def getArchiveMetadata(path):
     # try to access a l1b file via jasmin connection
     # read parameters and return as metadata dict
@@ -88,57 +133,76 @@ def getArchiveMetadata(path):
     cat_log_file = "00README_catalogue_and_licence.txt"
     readme = "00README"
 
-    def getContents(file):
-        try:
-            f=open(file,'r')
-            contents = f.readlines()
-            f.close()
-        except:
-            contents = ''
-            print(file,'not found')
-        return contents
-
     metadata = {
         'plane':'',
         'variables':'',
         'location':'',
         'platform':'',
-        'instruments':[]
+        'instruments':[],
+        'pi':''
     }
 
     ## -------------- Catalogue and License Search --------------
     catalogue = getContents(path + '/' + cat_log_file)
-    if type(catalogue) == list:
-        catalogue = catalogue[1]
+    if catalogue:
+        if type(catalogue) == list:
+            catalogue = catalogue[1]
 
-    if 'Photographic Camera' in catalogue:
-        metadata['instruments'].append('Camera')
-    is_recording = False
-    buffer = ''
-    for x in range(len(catalogue)):
+        if 'Photographic Camera' in catalogue:
+            metadata['instruments'].append('Camera')
+        is_recording = False
+        buffer = ''
+        for x in range(len(catalogue)):
 
-        ## ----------- Instrument -------------
-        if catalogue[x:x+3] == 'ATM':
-            metadata['instruments'].append('ATM')
-        elif catalogue[x:x+4] == 'CASI':
-            metadata['instruments'].append('CASI')
+            ## ----------- Instrument -------------
+            if catalogue[x:x+3] == 'ATM':
+                metadata['instruments'].append('ATM')
+            elif catalogue[x:x+4] == 'CASI':
+                metadata['instruments'].append('CASI')
 
-        ## ----------- Flight Plane -----------
-        elif catalogue[x:x+5] == 'Piper':
-            is_recording = True
+            ## ----------- Flight Plane -----------
+            elif catalogue[x:x+5] == 'Piper':
+                is_recording = True
 
-        elif catalogue[x+1:x+7] == 'during':
-            is_recording = False
-            metadata['plane'] = buffer
-            buffer = ''
-        else:
-            pass
+            elif catalogue[x+1:x+7] == 'during':
+                is_recording = False
+                metadata['plane'] = buffer
+                buffer = ''
+            else:
+                pass
 
-        if is_recording:
-            buffer += catalogue[x]
+            if is_recording:
+                buffer += catalogue[x]
 
-    ## -------------- README Search --------------
-    metadata['location'] = getContents(path + '/' + readme)[0].replace('\n','').replace(',',' -')
+    ## -------------- 00README Search --------------
+    readme_outer = getContents(path + '/' + readme)
+    if readme_outer:
+        try:
+            metadata['location'] = readme_outer[0].replace('\n','').replace(',',' -')
+        except:
+            metadata['location'] = ''
+
+    ## -------------- README Extra Search --------------
+    # Try in order: path + docs, path + * + docs
+    data = False
+    dirpath1 = path + '/Docs/'
+    if os.path.isdir(dirpath1):
+        data = getReadmeData(dirpath1)
+    else:
+        dirpath2 = ''
+        for xf in os.listdir(path):
+            xfile = path + '/' + xf
+            if os.path.isdir(xfile):
+                for yf in os.listdir(xfile):
+                    yfile = xfile + '/' + yf
+                    if 'Docs' in yfile:
+                        # Location of docs folder identified
+                        dirpath2 = yfile
+        if dirpath2 != '':
+            data = getReadmeData(dirpath2)
+
+    if data:
+        metadata['pi'] = data
     
     return metadata
 
@@ -396,7 +460,7 @@ if __name__ == '__main__':
         template = response['hits']['hits'][metadata['index']]
         
         template["_source"]["file"]["path"] = metadata['path']
-        template["_source"]["spatial"]["geometries"]["display"]["coordinates"] = list(sum_arr)
+        template["_source"]["spatial"]["geometries"]["display"]["coordinates"] = sum_arr.tolist()
 
         template["_source"]["temporal"]["start_time"] = metadata['start']
         template["_source"]["temporal"]["end_time"] = metadata['end']
@@ -415,34 +479,40 @@ if __name__ == '__main__':
         ## ----------- 4.5: Add NEODC/ARSF Metadata retrieved from xls documents -----------
 
         date_old = metadata['ptcode'].split('*')[1]
-        dt = date.split('-')
+        dt = date_old.split('-')
         date = '{}/{}/{}'.format(dt[2],dt[1],dt[0])
 
         try:
             arsf_metadata = arsf_meta[date]
-            l1 = arsf_metadata['Location']
-            l2 = arsf_metadata['NLocation']
-            if (l1 == l2) or (l1 in l2) or (l2 in l1):
-                # take longest
-                if len(l1) > len(l2):
-                    locations = [l1]
+            if arsf_metadata['FMatch']:
+                l1 = arsf_metadata['Location']
+                l2 = arsf_metadata['NLocation']
+                if (l1 == l2) or (l1 in l2) or (l2 in l1):
+                    # take longest
+                    if len(l1) > len(l2):
+                        locations = [l1]
+                    else:
+                        locations = [l2]
                 else:
-                    locations = [l2]
-            else:
-                locations = [l1,l2]
+                    locations = [l1,l2]
 
-            alt = arsf_metadata['Altitude']
-            # Add additional metadata in correct places
-            # full match only for now
-            # add locations (arr) if not equal or in one another
-            # add site code - difference?
-            # add altitude
-            try:
-                template["_source"]["misc"]["flight_info"]["altitude"] = alt
-                template["_source"]["misc"]["flight_info"]["locations"] = locations
-            except KeyError:
+                locations.append(template["_source"]["misc"]["location"])
+
+                alt = arsf_metadata['Altitude']
+                # Add additional metadata in correct places
+                # full match only for now
+                # add locations (arr) if not equal or in one another
+                # add site code - difference?
+                # add altitude
+                try:
+                    template["_source"]["misc"]["altitude"] = alt
+                    template["_source"]["misc"]["location"] = locations
+                except KeyError:
+                    pass
+                    # No pcode - shouldnt happen really
+            else:
                 pass
-                # No pcode - shouldnt happen really
+                # Not fully matching so don't write yet
 
 
         except:
@@ -461,8 +531,8 @@ if __name__ == '__main__':
         ## ----------- 4.6: Write json style dict to a string -----------
 
         if IS_WRITE:
-            g = open('jsons/{}'.format(ptcode),'w')
-            g.write(writeDictToString(template))
+            g = open('jsons/{}.json'.format(ptcode),'w')
+            g.write(json.dumps(template))
             g.close()
 
     if IS_WRITE:
