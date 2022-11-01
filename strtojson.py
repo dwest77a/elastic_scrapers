@@ -54,4 +54,9 @@ def formatJsonString(string):
     return word
 
 if __name__ == '__main__':
-    formatJsonFile('arsf_complete.json','arsf.json')
+    inp = input('File in:')
+    out = input('File out:')
+    try:
+        formatJsonFile(inp, out)
+    except:
+        print('Error processing file')
