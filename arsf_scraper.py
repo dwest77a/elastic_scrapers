@@ -257,7 +257,14 @@ def getArchiveMetadata(path):
     else:
         return None
 
-    
+def getDatabaseInfo(path):
+    """
+    Access database and retrieve as python dict
+    """
+    f = open(path,'r')
+    content = f.readlines()
+    f.close()
+
 
 #f = open('response.txt','r')
 #content = f.readlines()
