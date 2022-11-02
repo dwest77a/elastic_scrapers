@@ -1,6 +1,8 @@
 example.json
-jsons/*
+jsons/
 __pycache__/
+dbs/
+excel_scraper2.py
 ptcodes.txt
 dates_cross.txt
 ptcodes_cross.txt
