@@ -1,4 +1,4 @@
-## Navigate to arsf directory
+## Navigate to directory
 ## Scan through years available
 ## Open yr/pcode/Docs/readme1.txt
 
@@ -6,22 +6,16 @@
 ## E. Extract metadata from readme files and add pcode as flight num, as well as readme
 
 ## 1. Python elasticsearch
-## 1.1 check/count identical pcodes in arsf data
 from datetime import datetime
 import numpy as np
 import json
-import os
-#import matplotlib.pyplot as plt
-plt = ''
-#import xarray as xarr
+import os, sys
 
 from elasticsearch import Elasticsearch
 from pytostr import writeArrToString, writeDictToString # local
 
-IS_PLOT  = False
-IS_WRITE = True
-
-VERBOSE = False
+IS_WRITE = False
+VERBOSE = True
 
 def forceMatch(thing1, thing2):
     thing1 = thing1.lower()
@@ -76,9 +70,10 @@ def timeToDayFraction(time):
 
     return delta.days + delta.seconds/3600
 
-def findMatchingPcodes(response):
+def findMatchingPcodes(response): ## Deprecated
     # response - full elasticsearch json-style response
     #          - string version
+
     is_path = False
     paths = []
     for x in range(len(response)-50):
@@ -90,11 +85,12 @@ def findMatchingPcodes(response):
         if response[x+1] == ',' and is_path:
             paths.append(response[path_start:x])
             is_path = False
+
     print('Found {} paths'.format(len(paths)))
     pdict = {}
     pconcat = []
     for path in paths:
-        # ARSF specific pcode finder
+        # org specific pcode finder
         pcode = path.split('/')[4]
         try:
             pdict[pcode] += 1
@@ -107,9 +103,12 @@ def findMatchingPcodes(response):
     return None
 
 def getJsonMetadata(path):
-    f = open(path)
-    content = json.load(f)
-    f.close()
+    try:
+        f = open(path)
+        content = json.load(f)
+        f.close()
+    except FileNotFoundError:
+        content = False
     return content
 
 def getReadmeData(path):
@@ -139,7 +138,7 @@ def getReadmeData(path):
             counter += 1
     return principle
 
-def getVars(path):
+def getHDFVars(path):
     from pyhdf.SD import SD, SDC
 
     files = os.listdir(path)
@@ -163,7 +162,38 @@ def getVars(path):
             pass
     return variables
 
-def getArchiveMetadata(path):
+def getNCVars(path):
+    # Import netcdf python reader
+    from netCDF4 import Dataset
+
+    files = os.listdir(path)
+    rfiles = [] # Files that are netCDF readable
+    for f in files:
+        if f.endswith('.nc'):
+            rfiles.append(path + '/' + f)
+    for f in rfiles:
+        file = Dataset(f)
+        unique_vars = {}
+        for var in file.variables:
+            lname = var
+            sname = var.split('_')[0]
+            
+            try:
+                unique_vars[sname].append(lname)
+            except:
+                unique_vars[sname] = [lname]
+
+        for noint_name in unique_vars.keys():
+            uvars = unique_vars[noint_name]
+            if len(uvars) > 1:
+                print('{}: {}'.format(
+                                    noint_name, len(uvars)
+                ))
+            else:
+                print(noint_name, 1)
+        x=input()
+
+def getArchiveMetadata(path, org_name='arsf'):
     # try to access a l1b file via jasmin connection
     # read parameters and return as metadata dict
 
@@ -200,7 +230,7 @@ def getArchiveMetadata(path):
             print(' --- Retrieving Catalogue Licence data')
 
         catalogue = getContents(path + '/' + cat_log_file)
-        if catalogue:
+        if catalogue: ## arsf specific
             if type(catalogue) == list:
                 catalogue = catalogue[1]
 
@@ -217,18 +247,25 @@ def getArchiveMetadata(path):
                     metadata['instruments'].append('CASI')
 
                 ## ----------- Flight Plane -----------
-                elif catalogue[x:x+5] == 'Piper':
+                elif catalogue[x:x+5] == 'Piper' or catalogue[x+8:x+16] == 'aircraft':
                     is_recording = True
 
                 elif catalogue[x+1:x+7] == 'during':
                     is_recording = False
                     metadata['aircraft'] = buffer
                     buffer = ''
+                elif is_recording and x == len(catalogue)-1:
+                    is_recording - False
+                    metadata['aircraft'] = buffer # but remove end spaces
+                    buffer = ''
                 else:
                     pass
 
                 if is_recording:
                     buffer += catalogue[x]
+
+        ## FAAM:
+        ## Catalogue - BAE-146 Aircraft
 
         ## -------------- 00README Search --------------
 
@@ -270,18 +307,13 @@ def getArchiveMetadata(path):
 
         ## -------------- L1B Variable Search -------------- 
 
-        if VERBOSE:
-            print(' --- Retrieving L1b data')
-        skip_l1b = False
-        vars = False
-        if not skip_l1b:
-            if os.path.exists(path + '/L1b'):
-                vars = getVars(path + '/L1b')
-            elif os.path.exists(path + '/ATM'):
-                vars = ['Old']
-            else:
-                pass
-
+        if org_name == 'arsf': 
+            vars = getArsfL1bVars(path)
+        elif org_name == 'faam':
+            vars = getFaamProcessedVars(path)
+        else:
+            vars = False
+        
         if vars:
             metadata['variables'] = vars
 
@@ -293,16 +325,47 @@ def getArchiveMetadata(path):
     else:
         return None
 
+def getFaamProcessedVars(path):
+    if VERBOSE:
+        print(' --- Retrieving processed nc data')
+    vars = False
+    if os.path.exists(path + '/core_processed'):
+        vars = getNCVars(path + '/core_processed')
+    elif os.path.exists(path + '/core_raw'):
+        vars = ['Old']
+    else:
+        pass
+    return vars
 
-#f = open('response.txt','r')
-#content = f.readlines()
-#f.close()
-#findMatchingPcodes(content[0])
+def getArsfL1bVars(path):
+    if VERBOSE:
+        print(' --- Retrieving L1b data')
+    skip_l1b = False
+    vars = False
+    if not skip_l1b:
+        if os.path.exists(path + '/L1b'):
+            vars = getHDFVars(path + '/L1b')
+        elif os.path.exists(path + '/ATM'):
+            vars = ['Old']
+        else:
+            pass
+    return vars
+    
+def getRidOfGaps(arr):
+    carr = [arr[0]]
+    for x in range(1, len(arr)):
+        item = arr[x]
+        if item != '':
+            carr.append(item)
+    return carr
+
 
 if __name__ == '__main__':
     principles = 0
 
-    arsf_meta = getJsonMetadata('arsf_complete.json')
+    org_name = sys.argv[1]
+
+    org_meta = getJsonMetadata('{}_complete.json'.format(org_name))
 
     session_kwargs = {
         'hosts': ['https://elasticsearch.ceda.ac.uk'],
@@ -312,7 +375,7 @@ if __name__ == '__main__':
     }
     client = Elasticsearch(**session_kwargs)
     response = client.search(
-        index="arsf",
+        index=org_name,
         body={
             "_source":{
                 "includes":[
@@ -336,11 +399,6 @@ if __name__ == '__main__':
                             {
                                 "range":{
                                     "temporal.start_time":{}}}
-#                                        "from": "1992-01-01",
- #                                       "to": "1998-12-12"
-#                                    }
-#                                }
-#                            }
                             ]
                         ,
                         "must_not":[
@@ -420,16 +478,9 @@ if __name__ == '__main__':
 
     for index, hit in enumerate(response['hits']['hits']):
 
-        path       = hit['_source']['file']['path'].split('/')
-        pcode      = path[4]
-
-        short_path = '/'.join(path[0:5])
-
+        path       = getRidOfGaps(hit['_source']['file']['path'].split('/'))
         start_time = hit['_source']['temporal']['start_time']
         end_time   = hit['_source']['temporal']['end_time']
-        
-        # Append new entry per hit with basic info
-        hit_response_arr.append([pcode, start_time, index, short_path, end_time])
 
         # Extract spatial coords for each hit
         arr = np.array(hit['_source']['spatial']['geometries']['display']['coordinates'], dtype=float)
@@ -446,6 +497,19 @@ if __name__ == '__main__':
         remaining += len(Xc)
 
         spatial_arr.append(np.transpose(np.vstack((Xc,Yc))))
+        
+        # Org Specific pcode section
+        if org_name == 'arsf':
+            pcode      = path[4]
+            short_path = '/'.join(path[0:5])
+        else:
+            pcode      = path[5]
+            short_path = '/'.join(path[0:6])
+
+        # Append new entry per hit with basic info
+        hit_response_arr.append([pcode, start_time, index, short_path, end_time])
+
+        
 
     # Map array to np.array
     spatial_arr = np.array(spatial_arr, dtype=object)
@@ -461,6 +525,7 @@ if __name__ == '__main__':
      - Array for each ptcode contains entries for each hit as [time, index, path, end]
 
     """
+    # Universal ptcode - pcode/flight_num * date
     ptcodes = {}
     for entry in hit_response_arr:
         ptcode = entry[0]+'*'+entry[1].split('T')[0]
@@ -500,7 +565,7 @@ if __name__ == '__main__':
         
         ptcodes_written += ptcode + '\n'
 
-    print('Compiled a list of {} PCodes'.format(len(ptcodes_metadata)))
+    print('Compiled a list of {} ptcodes'.format(len(ptcodes_metadata)))
 
     ## --------------------------- Step 4 ------------------------------
     """
@@ -510,7 +575,7 @@ if __name__ == '__main__':
        but currently just take the first 'primary' array as correct one
 
     """
-    no_basic, no_archive, no_arsf, some_data = 0, 0, 0, 0
+    no_basic, no_archive, no_org, some_data = 0, 0, 0, 0
     nmatch_pis = 0
     limit = len(ptcodes_sorted.keys())
 
@@ -552,7 +617,7 @@ if __name__ == '__main__':
                 sum_arr.append(spatial_arr[entry[1]].tolist())
 
         ## ----------- 4.4: Determine which metadata sources exist for this ptcode -----------
-        metadata, archive_metadata, arsf_metadata = False, False, False
+        metadata, archive_metadata, org_metadata = False, False, False
         
         if VERBOSE:
             print(' -- Finding metadata')
@@ -560,32 +625,35 @@ if __name__ == '__main__':
         date_old = ptcode.split('*')[1]
         dt = date_old.split('-')
         date = '{}/{}/{}'.format(twodp(dt[2]),twodp(dt[1]),twodp(dt[0]))
-        ptcode_fmt_arsf = ptcode.split('*')[0].replace('_','/') + '*' + date
+        ptcode_fmt_org = ptcode.split('*')[0].replace('_','/') + '*' + date
         
+        ### ========= 4.4.1 Basic Info already extracted =========
         try:
             metadata = ptcodes_metadata[ptcode]
         except KeyError:
             no_basic += 1
             pass
 
+        ### ========= 4.4.2 CEDA Archive Metadata =========
         try:
-            archive_metadata = getArchiveMetadata(metadata['path'])
+            archive_metadata = getArchiveMetadata(metadata['path'],org_name=org_name) # org specific
         except KeyError:
             no_archive += 1
             pass
         if not archive_metadata:
             no_archive += 1
 
+        ### ========= 4.4.3 Extra Metadata =========
         try:
-            arsf_metadata = arsf_meta[ptcode_fmt_arsf]
-        except KeyError:
-            no_arsf += 1
+            org_metadata = org_meta[ptcode_fmt_org] # org specific
+        except:
+            no_org += 1
             pass
 
-        if archive_metadata or arsf_metadata:
+        if archive_metadata or org_metadata:
             some_data += 1
 
-        if archive_metadata and arsf_metadata:
+        if archive_metadata and org_metadata:
             print(ptcode)
         
         ## ----------- 4.5: Assemble json data from template (primary index) -----------
@@ -602,29 +670,36 @@ if __name__ == '__main__':
         template["_source"]["temporal"]["start_time"] = metadata['start']
         template["_source"]["temporal"]["end_time"] = metadata['end']
 
-        template["_source"]["misc"] = {
-            "flight_num":"",
-            "pcode":ptcode.split('*')
-        }
+        if org_name == 'arsf':
+            template["_source"]["misc"] = {
+                "flight_num":"",
+                "pcode":ptcode.split('*')
+            }
+        elif org_name == 'faam':
+            template["_source"]["misc"] = {
+                "flight_num":ptcode.split('*')[0]
+            }
+        else:
+            pass
 
         del template["_source"]["file"]["filename"]
 
         if archive_metadata:
             template["_source"]["misc"] = dict(template["_source"]["misc"],**archive_metadata)
 
-        ## ----------- 4.6: Add NEODC/ARSF Metadata retrieved from xls documents -----------
+        ## ----------- 4.6: Add NEODC/org Metadata retrieved from xls documents -----------
         if VERBOSE:
-            print(' -- Fetching NEODC/ARSF metadata')
+            print(' -- Fetching NEODC/org metadata')
         
-        if arsf_metadata:
+        if org_metadata:
             locs = []
 
             if VERBOSE:
-                print(' -- Found NEODC/ARSF metadata => Adding to template')
+                print(' -- Found NEODC/org metadata => Adding to template')
 
             for key in ['Location','Nlocation','target','base']:
                 try:
-                    loc = arsf_metadata['Location'].lower()
+                    loc = org_metadata['Location'].lower()
                     if loc not in locs:
                         locs.append(loc)
                 except KeyError:
@@ -638,7 +713,7 @@ if __name__ == '__main__':
             flight_crew = {}
             for fcrew in fcrew_params:
                 try:
-                    person = arsf_metadata[fcrew]
+                    person = org_metadata[fcrew]
                 except:
                     person = ''
                 flight_crew[fcrew] = person
@@ -646,7 +721,7 @@ if __name__ == '__main__':
             template["_source"]["misc"]["crew"] = flight_crew
 
             try:
-                alt = arsf_metadata['Altitude']
+                alt = org_metadata['Altitude']
             except KeyError:
                 alt = ''
 
@@ -657,7 +732,7 @@ if __name__ == '__main__':
             template["_source"]["misc"]["altitude"] = alt
 
             try:
-                platform = arsf_metadata['airc']
+                platform = org_metadata['airc']
             except KeyError:
                 platform = ''
             template["_source"]["misc"]["platform"] = platform
@@ -686,13 +761,6 @@ if __name__ == '__main__':
             if VERBOSE:
                 print(' -- Finished applying metadata')
 
-        ## ----------- 4.7: Plot sum_arr X,Y values to visualise data -----------
-        if IS_PLOT:
-            X = np.transpose(sum_arr)[0]
-            Y = np.transpose(sum_arr)[1]
-            plt.plot(X,Y)
-            plt.show()
-
         ## ----------- 4.8: Write json style dict to a string -----------
 
         if IS_WRITE:
@@ -707,7 +775,7 @@ if __name__ == '__main__':
     print('')
     print(' -- Missing basic info:',no_basic)
     print(' -- Missing archive info:', no_archive)
-    print(' -- Missing arsf_meta data:',no_arsf)
+    print(' -- Missing org_meta data:',no_org)
     print('')
     print('Indexes containing at least some extended info: {}/{}'.format(some_data, limit))
 
