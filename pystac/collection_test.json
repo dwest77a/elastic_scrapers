@@ -1,0 +1,30 @@
+{
+    "id":"arsf",
+    "type": "Collection",
+    "stac_extensions": [
+        ""
+    ],
+    "stac_version":"1.0.0",
+    "description": "Collection Test",
+    "title": "Simple Example Collection",
+    "providers": [],
+    "extent": {
+        "spatial": {"bbox":[[0,1,0,1]]},
+        "temporal":{"interval":[["2020-12-11T22:38:32","2020-12-11T22:38:32"]]}
+    },
+    "license":"",
+    "summaries":{},
+    "links":[{
+            "rel":"self",
+            "href":"collection_test.json",
+            "type":"application/json",
+            "title":"Collection Test"
+        },
+        {
+            "rel":"item",
+            "href":"ex.json",
+            "type":"application/json",
+            "title":"Item Test"
+        }
+    ]
+}

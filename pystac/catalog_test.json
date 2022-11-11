@@ -1,0 +1,21 @@
+{
+    "id":"Flight Catalog",
+    "type":"Catalog",
+    "stac_version":"1.6.1",
+    "stac_extensions":[""],
+    "title":"Test Catalog Item",
+    "description": "A Catalog Test",
+    "links":[{
+            "rel":"self",
+            "href":"catalog_test.json",
+            "type":"application/json",
+            "title":"Main Catalog"
+        },
+        {
+            "rel":"child",
+            "href":"collection_test.json",
+            "type":"application/json",
+            "title":"Collection Test"
+        }
+    ]
+}
