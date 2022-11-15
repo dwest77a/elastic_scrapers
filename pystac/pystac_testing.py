@@ -8,7 +8,7 @@ from pystac import Catalog, Collection, Item, get_stac_version
 from pystac.extensions.eo import EOExtension
 from pystac.extensions.label import LabelExtension
 
-root_catalog = Catalog.from_file('catalog_test.json')
+root_catalog = Catalog.from_file('flight_catalog/flight_catalog.json')
 print(f"ID: {root_catalog.id}")
 print(f"Title: {root_catalog.title or 'N/A'}")
 print(f"Description: {root_catalog.description or 'N/A'}")
@@ -22,8 +22,6 @@ collections = list(root_catalog.get_collections())
 print(f"Number of collections: {len(collections)}")
 print("Collections IDs:")
 for collection in collections:
-    print(f"- {collection.id}")
-    
     items = list(collection.get_items())
-    for item in items:
-        print(f" - {item.id}")
+    print(" - {} ({})".format(collection.id, len(items)))
+
