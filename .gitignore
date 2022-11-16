@@ -1,6 +1,6 @@
 __pycache__/
-./*.json
-./*.txt
-./*.py
+*.json
+*.txt
+*.py
 jsons/
 meta_stores/
