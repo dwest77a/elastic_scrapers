@@ -18,23 +18,28 @@ def addList(item,id):
         pass
     return buffer
 
-def jsonWrite(file, content):
+def jsonWrite(path, file, content):
+    if not os.path.exists(path):
+        os.makedirs(path)
+
     if IS_WRITE:
-        g = open(file,'w')
+        g = open(path + '/' + file,'w')
         g.write(json.dumps(content))
         g.close()
 
+
 class catalog_conversion:
-    def __init__(self):
+    def __init__(self, rootdir):
         
+        self.rootdir = rootdir
         self.collection_dict = {}
-        self.rootdirpath = 'flight_catalog'
+        self.outdir = 'flight_catalog'
 
         self.scores = {}
 
     def convert(self):
 
-        self.findFilesRecursive('../ES_jsons', 0)
+        self.findFilesRecursive(self.rootdir, 0)
 
         self.createCollections()
         self.createCatalog()
@@ -235,7 +240,7 @@ class catalog_conversion:
         except:
             self.scores[str(score)] = 1
 
-        jsonWrite('{}/collections/items/{}'.format(self.rootdirpath, fileout), stac_content)
+        jsonWrite('{}/collections/items/'.format(self.outdir), fileout, stac_content)
 
     def createCollections(self):
 
@@ -282,7 +287,7 @@ class catalog_conversion:
                 "links":collection_links
             }
 
-            jsonWrite(self.rootdirpath + '/' + cfile, collection)
+            jsonWrite(self.outdir,cfile, collection)
 
     def createCatalog(self):
 
@@ -313,7 +318,7 @@ class catalog_conversion:
             "links":catalog_links
         }
 
-        jsonWrite("{}/flight_catalog.json".format(self.rootdirpath), catalog)
+        jsonWrite(self.outdir,"flight_catalog", catalog)
 
 
 class ElasticsearchBulk:
@@ -373,8 +378,9 @@ if __name__ == "__main__":
     rootdir = sys.argv[1]
     if True:
         file_list = os.listdir(rootdir)
+        print(len(file_list))
         ElasticsearchBulk(rootdir).run(file_list)
 
     if False:
-        flights = catalog_conversion()
+        flights = catalog_conversion(rootdir)
         flights.convert()

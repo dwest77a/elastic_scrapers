@@ -1,11 +1,6 @@
 __pycache__/
-arsf_complete.json
-arsf_meta.csv
-dates_cross.txt
-dbs/
-example.json
-excel_scraper2.py
+./*.json
+./*.txt
+./*.py
 jsons/
-neodc_meta.txt
-ptcodes.txt
-ptcodes_cross.txt
+meta_stores/
