@@ -5,7 +5,9 @@ import numpy as np
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
-IS_WRITE = True
+IS_WRITE = False
+IS_DEPLOY = False
+IS_CONVERT = False
 
 def addList(item,id):
     buffer = []
@@ -376,11 +378,11 @@ class ElasticsearchBulk:
 
 if __name__ == "__main__":
     rootdir = sys.argv[1]
-    if True:
+    if IS_DEPLOY:
         file_list = os.listdir(rootdir)
         print(len(file_list))
         ElasticsearchBulk(rootdir).run(file_list)
 
-    if False:
+    if IS_CONVERT:
         flights = catalog_conversion(rootdir)
         flights.convert()

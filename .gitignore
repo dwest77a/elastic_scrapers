@@ -1,6 +1,8 @@
 __pycache__/
-./*.json
-./*.txt
-./*.py
+*.json
+*.txt
+*.py
 jsons/
 meta_stores/
+pystac/flight_catalog/
+root_certificate/
