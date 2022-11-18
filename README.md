@@ -3,17 +3,8 @@
 Part of the Flight Finder migration to flights
  - Scans elastic search records of arsf, faam and eufar files
  - Combines metadata and spatial coordinates into new json files
- - Json files can then be added to elastic search index in future
+ - Json files can then be added to elastic search index using pystac_conversion bulk mode
 
-Metadata to combine (misc):
- - flight num
- - pcode (data)
- - aircraft
- - variables
- - location
- - platform
- - instruments
- - pi/crew
-
-Initial: 19/10/2022
- - adding FAAM support 07/11/2022
+Additional steps:
+ - Include additional indexes (bas-masin, new arsf)
+ - Fix existing projects (twinotter)
